@@ -2,13 +2,13 @@
   --bg: #f4f6fa;
   --card: #ffffff;
   --ink: #111827;
-  --muted: #6b7280;
+  --muted: #4b5563;
   --line: #d9dee8;
   --brand: #1f3a5f;
   --brand-ink: #ffffff;
-  --accent: #2563eb;
+  --accent: #1d4ed8;
   --accent-ink: #ffffff;
-  --ok: #15803d;
+  --ok: #166534;
   --ok-bg: #e7f6ec;
   --warn: #b45309;
   --warn-bg: #fef3c7;
@@ -16,16 +16,17 @@
   --err-bg: #fde8e8;
   --sel: #e8f0ff;
   --radius: 12px;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f141c;
     --card: #181f2b;
     --ink: #e8ecf3;
-    --muted: #94a0b4;
-    --line: #2b3546;
+    --muted: #b4bfd0;
+    --line: #3a4659;
     --brand: #2a4a78;
-    --accent: #6ea0ff;
+    --accent: #8fb6ff;
     --accent-ink: #0b1220;
     --ok: #4ade80;
     --ok-bg: #12301f;
@@ -34,6 +35,7 @@
     --err: #f87171;
     --err-bg: #3b1616;
     --sel: #1c2c4a;
+    color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -88,9 +90,17 @@ label.f { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; 
 label.f > input, label.f > select, label.f > textarea { color: var(--ink); }
 input, select, textarea, button { font: inherit; }
 input, select, textarea {
+  color: var(--ink);
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; min-height: 2.5rem; width: 100%;
 }
 textarea { min-height: 6rem; resize: vertical; }
+::placeholder { color: var(--muted); opacity: 1; }
+input[type="file"] { padding: .35rem; }
+input[type="file"]::file-selector-button {
+  font: inherit; font-weight: 600; color: var(--ink); background: var(--sel);
+  border: 1px solid var(--line); border-radius: 8px; padding: .35rem .8rem; margin-right: .6rem; cursor: pointer;
+}
+select option { color: var(--ink); background: var(--card); }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
 button, .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
@@ -100,7 +110,7 @@ button, .btn {
 button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--err); border-color: var(--err); }
 button.small { min-height: 2rem; padding: .25rem .6rem; font-size: .85rem; }
-button:disabled { opacity: .5; cursor: not-allowed; }
+button:disabled { opacity: .65; cursor: not-allowed; }
 .link { background: none; border: none; color: var(--accent); padding: 0; min-height: 0; font-weight: 600; }
 
 .notice { border-radius: 10px; padding: .6rem .8rem; margin: .5rem 0; }
@@ -140,7 +150,7 @@ table.cross td.name, table.cross th.name { text-align: left; }
 .board .pl .sc { color: var(--muted); font-size: .85rem; flex: none; }
 .board .pl .clr { flex: none; width: .8rem; height: .8rem; border-radius: 3px; border: 1px solid var(--muted); align-self: center; }
 .board .pl .clr.w { background: #fff; }
-.board .pl .clr.b { background: #222; }
+.board .pl .clr.b { background: #222; border-color: var(--ink); }
 .res { display: flex; gap: .25rem; }
 .res button { min-width: 2.9rem; min-height: 2.9rem; padding: .2rem .35rem; font-size: 1rem; }
 .res button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
