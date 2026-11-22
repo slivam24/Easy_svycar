@@ -1,4 +1,4 @@
-// Uživatelské rozhraní: turnaje jednotlivců švýcarským systémem.
+// Uživatelské rozhraní: turnaje jednotlivců (švýcarský systém, každý s každým); družstva viz teamui.js.
 
 import {
   newTournament, newPlayer, renumber, pairNextRound, roundRecord, scoreAfter, playerById,
@@ -23,6 +23,8 @@ function applySystem(t, key) {
   if (rr) t.rounds = Math.max(1, roundRobinRounds(t.players.length, t.cycles));
 }
 import { tournamentToTRF, trfToTournament } from './trf.js';
+import { isTeam, newTeamTournament } from './team.js';
+import { initTeamUI, renderTeam, resetTeamUI, TEAM_TABS, TEAM_SYSTEMS, applyTeamSystem } from './teamui.js';
 import { listTournaments, loadTournament, saveTournament, deleteTournament } from './store.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -87,6 +89,13 @@ function render() {
   }
   $('#topTitle').textContent = T.name || 'Turnaj';
   document.title = `${T.name || 'Turnaj'} – Švýcar`;
+  if (isTeam(T)) {
+    const activeT = tab || (T.teams.length ? 'kola' : 'druzstva');
+    tabsEl.hidden = false;
+    tabsEl.innerHTML = TEAM_TABS.map(([k, label]) => `<a href="#t=${encodeURIComponent(T.id)}&tab=${k}"${k === activeT ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+    renderTeam(activeT);
+    return;
+  }
   const active = tab || (T.players.length ? 'kola' : 'hraci');
   tabsEl.hidden = false;
   tabsEl.innerHTML = TABS.map(([k, label]) => `<a href="#t=${encodeURIComponent(T.id)}&tab=${k}"${k === active ? ' aria-current="page"' : ''}>${label}</a>`).join('');
@@ -102,19 +111,21 @@ function renderHome() {
   const list = listTournaments();
   view.innerHTML = `
     <section class="card">
-      <h2>Šachové turnaje jednotlivců</h2>
+      <h2>Šachové turnaje jednotlivců a soutěže družstev</h2>
       <p class="muted">Švýcarský systém s losováním podle holandského systému FIDE (platí od 1. 2. 2026) nebo každý s každým
-        podle Bergerových tabulek FIDE. Pomocná hodnocení FIDE (od 1. 3. 2026) s výchozím pořadím podle Soutěžního řádu ŠSČR.
+        podle Schurigových (Bergerových) tabulek, pro jednotlivce i družstva. Pomocná hodnocení FIDE (od 1. 3. 2026) s výchozím pořadím podle Soutěžního řádu ŠSČR.
         Výsledky jde zadávat z mobilu. Data zůstávají v tomto zařízení.</p>
       <form id="newForm" class="row">
         <input name="name" placeholder="Název nového turnaje" required style="flex:1;min-width:12rem" aria-label="Název nového turnaje">
-        <select name="system" style="width:auto" aria-label="Systém turnaje">${Object.entries(SYSTEMS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+        <select name="system" style="width:auto" aria-label="Systém turnaje">
+          <optgroup label="Jednotlivci">${Object.entries(SYSTEMS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</optgroup>
+          <optgroup label="Družstva">${Object.entries(TEAM_SYSTEMS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</optgroup></select>
         <button class="primary">＋ Nový turnaj</button>
       </form>
     </section>
     <section class="card">
       <h2>Moje turnaje</h2>
-      ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Název</th><th>Místo</th><th class="num">Hráčů</th><th class="num">Kol</th><th>Upraveno</th></tr></thead><tbody>
+      ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Název</th><th>Místo</th><th class="num">Účastníků</th><th class="num">Kol</th><th>Upraveno</th></tr></thead><tbody>
         ${list.map((x) => `<tr><td><a href="#t=${encodeURIComponent(x.id)}">${esc(x.name || 'Bez názvu')}</a></td><td>${esc(x.city || '')}</td>
           <td class="num">${x.players}</td><td class="num">${x.paired}/${x.rounds}</td><td class="small muted">${esc(fmtDateTime(x.updated))}</td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Zatím tu žádný turnaj není.</p>'}
@@ -127,8 +138,15 @@ function renderHome() {
   $('#newForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const t = newTournament({ name: fd.get('name').trim() });
-    applySystem(t, fd.get('system'));
+    const key = fd.get('system');
+    let t;
+    if (key.startsWith('team-')) {
+      t = newTeamTournament({ name: fd.get('name').trim() });
+      applyTeamSystem(t, key);
+    } else {
+      t = newTournament({ name: fd.get('name').trim() });
+      applySystem(t, key);
+    }
     saveTournament(t);
     T = t;
     go({ id: t.id, tab: 'turnaj' });
@@ -150,7 +168,7 @@ async function importFile(e) {
     let t;
     if (text.trim().startsWith('{')) {
       t = JSON.parse(text);
-      if (!t.players || !t.roundsData) throw new Error('Soubor není záloha turnaje.');
+      if (!(t.players || t.teams) || !t.roundsData) throw new Error('Soubor není záloha turnaje.');
       if (loadTournament(t.id)) t.id = `t${Date.now().toString(36)}`;
     } else {
       t = trfToTournament(text);
@@ -870,8 +888,19 @@ function printStandings(upTo, rows, codes) {
 }
 
 // ---------------------------------------------------------------- start
+initTeamUI({
+  getT: () => T, save, go, toast, esc, $, view, parseHash, printHtml, secureRandom, download, fileBase, render,
+  deleteCurrent: () => {
+    if (!confirm(`Opravdu smazat „${T.name}“ z tohoto zařízení?`)) return;
+    deleteTournament(T.id);
+    T = null;
+    location.hash = '';
+  },
+});
+
 window.addEventListener('hashchange', () => {
   editingPlayer = null;
+  resetTeamUI();
   render();
   view.focus({ preventScroll: true });
 });

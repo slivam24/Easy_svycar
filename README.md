@@ -1,7 +1,7 @@
 # Švýcar – šachové turnaje jednotlivců
 
-Webová aplikace pro řízení šachových turnajů jednotlivců švýcarským systémem i systémem každý
-s každým. Běží v prohlížeči
+Webová aplikace pro řízení šachových turnajů jednotlivců a soutěží družstev švýcarským systémem
+i systémem každý s každým. Běží v prohlížeči
 na počítači, tabletu i telefonu, funguje i bez internetu a nepotřebuje server: data zůstávají
 v zařízení.
 
@@ -21,6 +21,17 @@ v zařízení.
   - odstoupení podle Soutěžního řádu ŠSČR čl. 5.2.4: po odehrání aspoň poloviny partií se
     kontumují zbývající partie, jinak všechny,
   - křížová tabulka hráč × hráč.
+- **Soutěže družstev** (každý s každým jedno- i dvoukolově, nebo švýcarský systém):
+  - družstva se soupiskami; výchozí sestava podle pořadí na soupisce (SŘ čl. 3.6.2), jde ji
+    upravit po šachovnicích, neobsazená šachovnice je kontumace,
+  - domácí mají bílé na lichých šachovnicích (SŘ čl. 3.4.1), výsledky se zadávají po šachovnicích,
+  - zápasové body 3/1/0 (SŘ čl. 5.3.2, volitelně 2/1/0), skóre jako součet bodů z partií,
+  - švýcarský systém družstev losuje holandský systém FIDE se zápasovými body jako hlavním skóre,
+  - pořadí podle SŘ čl. 5.3.3 (každý s každým: skóre, vyhrané partie, vzájemná utkání, výsledek
+    proti vítězi, druhému…) a čl. 5.3.4 (švýcar: Buchholz ze zápasových bodů, skóre, Buchholz
+    ze skóre bez nejhoršího, Buchholz ze skóre); výpočet podle FIDE C.07 čl. 13 a 16,
+  - vystoupení družstva podle SŘ čl. 5.3.6 (kontumace zbývajících utkání, nebo anulování),
+  - křížová tabulka družstev a výsledky jednotlivců.
 - **Pomocná hodnocení** podle FIDE C.07 ve znění od 1. 3. 2026, včetně čl. 16 (neodehraná kola)
   a výjimky pro Cut-1. Výchozí pořadí odpovídá Soutěžnímu řádu ŠSČR:
   - švýcarský systém (čl. 5.2.3): vzájemné partie, Buchholz bez nejhoršího, Buchholz,
@@ -81,6 +92,8 @@ Nasazení: GitHub Pages z větve `main`, kořenová složka.
 | --- | --- |
 | `js/dutch.js` | losování (holandský systém FIDE 2026) |
 | `js/roundrobin.js` | rozpis každý s každým (Bergerovy tabulky FIDE) |
+| `js/team.js` | soutěže družstev: utkání, rozpis, losování, pořadí |
+| `js/teamui.js` | rozhraní soutěží družstev |
 | `js/matching.js` | párování v obecném grafu: největší počet dvojic a největší váha (BigInt) |
 | `js/tiebreaks.js` | pomocná hodnocení FIDE C.07 |
 | `js/model.js` | datový model turnaje, body, startovní čísla, převod na vstup losování |
@@ -91,6 +104,6 @@ Nasazení: GitHub Pages z větve `main`, kořenová složka.
 ## Omezení
 
 - Data jsou jen v jednom zařízení; mezi zařízeními se přenášejí zálohou.
-- Zatím bez zrychleného losování (Baku), soutěží družstev, Varmových tabulek a ruční úpravy
-  vylosovaných dvojic.
+- Zatím bez zrychleného losování (Baku), Varmových tabulek, ruční úpravy vylosovaných dvojic
+  a kontroly sestav družstev podle SŘ (hosté, volní hráči, cizinci).
 - Hodnocení podle ratingu počítají jen se soupeři, kteří rating mají.

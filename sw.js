@@ -1,6 +1,6 @@
 // Service worker: aplikace funguje i bez internetu. Soubory se berou z mezipaměti
 // a na pozadí se obnovují ze sítě.
-const CACHE = 'svycar-v3';
+const CACHE = 'svycar-v4';
 const SHELL = [
   './',
   'index.html',
@@ -12,6 +12,8 @@ const SHELL = [
   'js/dutch.js',
   'js/matching.js',
   'js/roundrobin.js',
+  'js/team.js',
+  'js/teamui.js',
   'js/tiebreaks.js',
   'js/trf.js',
   'js/store.js',

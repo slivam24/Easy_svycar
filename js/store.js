@@ -38,7 +38,7 @@ export function saveTournament(t) {
     name: t.name,
     city: t.city,
     dateFrom: t.dateFrom,
-    players: t.players.length,
+    players: t.kind === 'team' ? (t.teams || []).length : t.players.length,
     rounds: t.rounds,
     paired: t.roundsData.length,
     updated: t.updated,
