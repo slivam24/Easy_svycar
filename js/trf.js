@@ -192,7 +192,7 @@ export function tournamentToTRF(t) {
   lines.push(`062 ${t.players.length}`);
   lines.push(`072 ${t.players.filter((p) => Number(p.rating) > 0).length}`);
   lines.push('082 0');
-  lines.push('092 Individual: Swiss-System (FIDE Dutch)');
+  lines.push(t.system === 'rr' ? `092 Individual: Round-Robin${t.cycles === 2 ? ' (double)' : ''}` : '092 Individual: Swiss-System (FIDE Dutch)');
   hdr('102', t.arbiter);
   hdr('112', t.deputy);
   hdr('122', t.timeControl);
@@ -231,6 +231,6 @@ function trfBlock(t, rec, tpnOf) {
     else if (rec.kind === 'forfeitLoss') code = '-';
     return `${opp} ${c} ${code}`;
   }
-  const code = { PAB: 'U', HPB: 'H', FPB: 'F', ZPB: 'Z', absent: 'Z' }[rec.kind] || 'Z';
+  const code = { PAB: 'U', HPB: 'H', FPB: 'F', ZPB: 'Z', absent: 'Z', RRB: 'Z' }[rec.kind] || 'Z';
   return `0000 - ${code}`;
 }

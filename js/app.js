@@ -2,9 +2,26 @@
 
 import {
   newTournament, newPlayer, renumber, pairNextRound, roundRecord, scoreAfter, playerById,
-  pendingGames, isAvailable, fmtPts, TITLES, RESULTS, BYE_LABEL, TIEBREAKS_SR_SWISS, POINTS_DEFAULT,
+  pendingGames, isAvailable, fmtPts, TITLES, RESULTS, BYE_LABEL, TIEBREAKS_SR_SWISS, TIEBREAKS_SR_RR, POINTS_DEFAULT,
+  isRoundRobin, generateRoundRobin, drawStartNumbers, numbersByRating, withdrawalEffect,
 } from './model.js';
-import { computeStandings, TIEBREAKS } from './tiebreaks.js';
+import { computeStandings, TIEBREAKS, tiebreaksFor } from './tiebreaks.js';
+import { roundRobinRounds } from './roundrobin.js';
+
+const SYSTEMS = {
+  dutch: 'Švýcarský systém',
+  rr1: 'Každý s každým',
+  rr2: 'Každý s každým dvoukolově',
+};
+const systemKey = (t) => (isRoundRobin(t) ? `rr${t.cycles === 2 ? 2 : 1}` : 'dutch');
+function applySystem(t, key) {
+  const rr = key !== 'dutch';
+  const changed = systemKey(t) !== key;
+  t.system = rr ? 'rr' : 'dutch';
+  t.cycles = key === 'rr2' ? 2 : 1;
+  if (changed) t.tiebreaks = [...(rr ? TIEBREAKS_SR_RR : TIEBREAKS_SR_SWISS)];
+  if (rr) t.rounds = Math.max(1, roundRobinRounds(t.players.length, t.cycles));
+}
 import { tournamentToTRF, trfToTournament } from './trf.js';
 import { listTournaments, loadTournament, saveTournament, deleteTournament } from './store.js';
 
@@ -85,11 +102,13 @@ function renderHome() {
   const list = listTournaments();
   view.innerHTML = `
     <section class="card">
-      <h2>Turnaje jednotlivců švýcarským systémem</h2>
-      <p class="muted">Losování podle holandského systému FIDE (platí od 1. 2. 2026), pomocná hodnocení FIDE (od 1. 3. 2026)
-        s výchozím pořadím podle Soutěžního řádu ŠSČR. Výsledky jde zadávat z mobilu. Data zůstávají v tomto zařízení.</p>
+      <h2>Šachové turnaje jednotlivců</h2>
+      <p class="muted">Švýcarský systém s losováním podle holandského systému FIDE (platí od 1. 2. 2026) nebo každý s každým
+        podle Bergerových tabulek FIDE. Pomocná hodnocení FIDE (od 1. 3. 2026) s výchozím pořadím podle Soutěžního řádu ŠSČR.
+        Výsledky jde zadávat z mobilu. Data zůstávají v tomto zařízení.</p>
       <form id="newForm" class="row">
         <input name="name" placeholder="Název nového turnaje" required style="flex:1;min-width:12rem" aria-label="Název nového turnaje">
+        <select name="system" style="width:auto" aria-label="Systém turnaje">${Object.entries(SYSTEMS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
         <button class="primary">＋ Nový turnaj</button>
       </form>
     </section>
@@ -107,8 +126,9 @@ function renderHome() {
     </section>`;
   $('#newForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = new FormData(e.target).get('name').trim();
-    const t = newTournament({ name });
+    const fd = new FormData(e.target);
+    const t = newTournament({ name: fd.get('name').trim() });
+    applySystem(t, fd.get('system'));
     saveTournament(t);
     T = t;
     go({ id: t.id, tab: 'turnaj' });
@@ -171,14 +191,21 @@ function renderPlayers() {
           <button class="primary">${p ? 'Uložit' : '＋ Přidat'}</button>
           ${p ? '<button type="button" id="cancelEdit">Zrušit</button>' : ''}
           ${p && !hasGames(t, p.id) ? '<button type="button" class="danger" id="delPlayer">Smazat hráče</button>' : ''}
-          ${p && hasGames(t, p.id) ? `<button type="button" id="withdraw">${p.status === 'withdrawn' ? 'Vrátit do turnaje' : `Odstoupil (od ${R + 1}. kola)`}</button>` : ''}
+          ${p && hasGames(t, p.id) ? `<button type="button" id="withdraw">${p.status === 'withdrawn' ? 'Vrátit do turnaje' : `Odstoupil (od ${withdrawRound(t)}. kola)`}</button>` : ''}
         </div>
       </form>
-      ${R ? '<p class="muted small">Hráč přidaný po 1. kole je pozdě přihlášený: za odehraná kola dostane 0 bodů a losuje se od dalšího kola.</p>' : ''}
+      ${p && isRoundRobin(t) && hasGames(t, p.id) ? `<p class="muted small">${esc(withdrawNote(t, p))}</p>` : ''}
+      ${R && !isRoundRobin(t) ? '<p class="muted small">Hráč přidaný po 1. kole je pozdě přihlášený: za odehraná kola dostane 0 bodů a losuje se od dalšího kola.</p>' : ''}
+      ${R && isRoundRobin(t) ? '<p class="muted small">Rozpis už je hotový; nového hráče do turnaje každý s každým přidat nejde.</p>' : ''}
     </section>
     <section class="card">
       <div class="row between"><h2>Hráči (${t.players.length})</h2>
-        <span class="muted small">Startovní čísla podle ratingu, titulu a abecedy (FIDE C.04.2 čl. 2)${t.roundsData.length >= 4 || t.tpnFrozen ? ' – už se nemění' : ''}.</span></div>
+        <span class="muted small">${isRoundRobin(t)
+    ? (t.tpnManual ? 'Startovní čísla jsou vylosovaná' : 'Startovní čísla podle ratingu') + (R ? ' a rozpis je hotový.' : '. Před vytvořením rozpisu je můžete vylosovat.')
+    : `Startovní čísla podle ratingu, titulu a abecedy (FIDE C.04.2 čl. 2)${t.roundsData.length >= 4 || t.tpnFrozen ? ' – už se nemění' : ''}.`}</span></div>
+      ${isRoundRobin(t) && !R && t.players.length > 1 ? `<div class="row" style="margin-bottom:.6rem">
+        <button id="drawNumbers">🎲 Vylosovat startovní čísla</button>
+        ${t.tpnManual ? '<button id="ratingNumbers">Čísla podle ratingu</button>' : ''}</div>` : ''}
       ${t.players.length ? `<div class="table-wrap"><table class="t"><thead><tr><th class="num">SČ</th><th>Jméno</th><th>Tit.</th><th class="num">Rtg</th><th>FIDE ID</th><th>Fed</th><th>Oddíl</th><th>Nar.</th></tr></thead><tbody>
         ${t.players.map((x) => `<tr class="${x.status === 'withdrawn' ? 'withdrawn' : ''}"><td class="num">${x.tpn ?? ''}</td>
           <td class="name"><button class="link" data-edit="${x.id}">${esc(x.name)}</button></td><td>${esc(x.title)}</td><td class="num">${x.rating || ''}</td>
@@ -229,13 +256,24 @@ function renderPlayers() {
     save();
     renderPlayers();
   });
+  $('#drawNumbers')?.addEventListener('click', () => {
+    drawStartNumbers(t, secureRandom);
+    save();
+    toast('Startovní čísla vylosována');
+    renderPlayers();
+  });
+  $('#ratingNumbers')?.addEventListener('click', () => {
+    numbersByRating(t);
+    save();
+    renderPlayers();
+  });
   $('#withdraw')?.addEventListener('click', () => {
     if (p.status === 'withdrawn') {
       p.status = 'active';
       p.withdrawnFrom = null;
     } else {
       p.status = 'withdrawn';
-      p.withdrawnFrom = R + 1;
+      p.withdrawnFrom = withdrawRound(t);
     }
     save();
     editingPlayer = null;
@@ -270,6 +308,28 @@ function renderPlayers() {
   });
 }
 
+// Kolo, od kterého hráč nehraje: u švýcaru další losované kolo, u turnaje každý s každým
+// první kolo bez zadaných výsledků jeho partie.
+function withdrawRound(t) {
+  if (!isRoundRobin(t)) return t.roundsData.length + 1;
+  const p = editingPlayer;
+  for (let r = 1; r <= t.roundsData.length; r++) {
+    const g = t.roundsData[r - 1].pairs.find((x) => x.white === p || x.black === p);
+    if (g && !g.result) return r;
+  }
+  return t.roundsData.length + 1;
+}
+
+function withdrawNote(t, p) {
+  if (p.status === 'withdrawn') {
+    const eff = withdrawalEffect(t, p.id);
+    return eff.from === 1
+      ? `Odehrál ${eff.played} z ${eff.total} partií, tedy méně než polovinu: všechny jeho partie jsou prohrané kontumací (SŘ čl. 5.2.4).`
+      : `Odehrál ${eff.played} z ${eff.total} partií: výsledky zůstávají, partie od ${eff.from}. kola jsou prohrané kontumací (SŘ čl. 5.2.4).`;
+  }
+  return 'Podle SŘ čl. 5.2.4: kdo odstoupí po odehrání aspoň poloviny partií, prohraje zbývající partie kontumačně; jinak se kontumačně prohrají všechny jeho partie.';
+}
+
 // ---------------------------------------------------------------- kola
 function nameOf(id) {
   const p = playerById(T, id);
@@ -280,12 +340,25 @@ function renderRounds() {
   const t = T;
   const R = t.roundsData.length;
   const { round } = parseHash();
-  const sel = round && round <= R + 1 ? round : R && pendingGames(t, R) ? R : Math.min(R + 1, t.rounds);
+  const rrMode = isRoundRobin(t);
+  if (rrMode && !R) {
+    view.innerHTML = scheduleView();
+    bindSchedule();
+    return;
+  }
+  let sel;
+  if (rrMode) {
+    let firstOpen = 1;
+    while (firstOpen < R && !pendingGames(t, firstOpen)) firstOpen++;
+    sel = round && round <= R ? round : firstOpen;
+  } else {
+    sel = round && round <= R + 1 ? round : R && pendingGames(t, R) ? R : Math.min(R + 1, t.rounds);
+  }
   const chips = [];
   for (let r = 1; r <= t.rounds; r++) {
     const paired = r <= R;
     const done = paired && !pendingGames(t, r);
-    chips.push(`<button class="chip${done ? ' done' : ''}" aria-pressed="${r === sel}" data-round="${r}" ${r > R + 1 ? 'disabled' : ''}>${r}. kolo</button>`);
+    chips.push(`<button class="chip${done ? ' done' : ''}" aria-pressed="${r === sel}" data-round="${r}" ${r > R + (rrMode ? 0 : 1) ? 'disabled' : ''}>${r}. kolo</button>`);
   }
   let body = '';
   if (sel <= R) body = roundView(sel);
@@ -296,6 +369,34 @@ function renderRounds() {
   else bindPairing(sel);
 }
 
+function scheduleView() {
+  const t = T;
+  const n = t.players.length;
+  const problems = [];
+  if (n < 3) problems.push('Turnaj každý s každým potřebuje aspoň 3 hráče.');
+  return `<section class="card">
+    <h2>Rozpis turnaje každý s každým</h2>
+    ${problems.map((x) => `<div class="notice warn">${esc(x)}</div>`).join('')}
+    <p>${n} hráčů, ${t.cycles === 2 ? 'dvoukolově' : 'jednokolově'}: <strong>${roundRobinRounds(n, t.cycles)} kol</strong>${n % 2 ? ', v každém kole má jeden hráč volno' : ''}.
+      Rozpis podle Bergerových tabulek FIDE (C.05, příloha 1)${t.cycles === 2 ? '; v prvním cyklu jsou podle doporučení FIDE prohozená poslední dvě kola, druhý cyklus má obrácené barvy' : ''}.</p>
+    <p class="muted small">Startovní čísla: ${t.tpnManual ? 'vylosovaná' : 'podle ratingu'}. Vylosovat je jde v části Hráči. Po vytvoření rozpisu se už nemění.</p>
+    <button class="primary" id="makeSchedule" ${problems.length ? 'disabled' : ''}>Vytvořit rozpis všech kol</button>
+  </section>`;
+}
+
+function bindSchedule() {
+  $('#makeSchedule')?.addEventListener('click', () => {
+    try {
+      generateRoundRobin(T);
+      save();
+      toast(`Rozpis vytvořen: ${T.rounds} kol`);
+      go({ round: 1 });
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+}
+
 function roundView(r) {
   const t = T;
   const rd = t.roundsData[r - 1];
@@ -304,8 +405,11 @@ function roundView(r) {
   const boards = rd.pairs.map((g, i) => {
     const sw = fmtPts(scoreAfter(t, g.white, r - 1));
     const sb = fmtPts(scoreAfter(t, g.black, r - 1));
-    const res = g.result;
-    const btn = (code, label) => `<button data-b="${i}" data-res="${code}" aria-pressed="${res === code}" aria-label="${label}">${label}</button>`;
+    const rec = roundRecord(t, g.white, r);
+    const forcedRes = rec.forced ? rec.result : null;
+    const res = forcedRes ?? g.result;
+    const dis = forcedRes ? ' disabled' : '';
+    const btn = (code, label) => `<button data-b="${i}" data-res="${code}" aria-pressed="${res === code}" aria-label="${label}"${dis}>${label}</button>`;
     const forfeit = ['+-', '-+', '--'].includes(res);
     return `<div class="board${res ? ' has-result' : ''}">
       <div class="no">${i + 1}</div>
@@ -314,7 +418,8 @@ function roundView(r) {
         <div class="pl"><span class="clr b" aria-hidden="true"></span><span class="nm">${esc(nameOf(g.black))}</span><span class="sc">${esc(sb)}</span></div>
       </div>
       <div class="res">${btn('1-0', '1–0')}${btn('½-½', '½')}${btn('0-1', '0–1')}
-        <button class="more" data-more="${i}" aria-pressed="${forfeit}" aria-label="Kontumace" title="Kontumace">${forfeit ? esc(res.replace('-', ':')) : '⋯'}</button></div>
+        <button class="more" data-more="${i}" aria-pressed="${forfeit}" aria-label="Kontumace" title="Kontumace"${dis}>${forfeit ? { '+-': '+ : −', '-+': '− : +', '--': '− : −' }[res] : '⋯'}</button></div>
+      ${forcedRes ? '<div class="forfeits"><span class="muted small">Kontumace: hráč odstoupil (SŘ čl. 5.2.4)</span></div>' : ''}
       <div class="forfeits" data-forfeits="${i}" hidden>
         <span class="muted small">Kontumace:</span>
         <button class="small" data-b="${i}" data-res="+-" aria-pressed="${res === '+-'}">+ : − (bílý)</button>
@@ -332,9 +437,10 @@ function roundView(r) {
     <div class="boards">${boards}</div>
     ${byes}
     <div class="row" style="margin-top:.8rem">
-      <button id="printPairs">🖨 Tisk losování</button>
-      ${!pend && r < t.rounds && r === t.roundsData.length ? `<button class="primary" id="toNext">Další kolo →</button>` : ''}
-      ${isLast ? '<button class="danger" id="unpair">Zrušit losování tohoto kola</button>' : ''}
+      <button id="printPairs">🖨 Tisk ${isRoundRobin(t) ? 'kola' : 'losování'}</button>
+      ${!pend && r < t.rounds && (isRoundRobin(t) || r === t.roundsData.length) ? `<button class="primary" id="toNext">Další kolo →</button>` : ''}
+      ${isLast && !isRoundRobin(t) ? '<button class="danger" id="unpair">Zrušit losování tohoto kola</button>' : ''}
+      ${isRoundRobin(t) && !t.roundsData.some((x) => x.pairs.some((g) => g.result)) ? '<button class="danger" id="unschedule">Zrušit rozpis</button>' : ''}
     </div>
     ${lastLog && lastLog.round === r ? `<details style="margin-top:.6rem"><summary>Jak losování proběhlo</summary><pre class="log">${esc(lastLog.lines.join('\n'))}</pre></details>` : ''}
   </section>`;
@@ -342,7 +448,7 @@ function roundView(r) {
 
 function byePoints(type) {
   const pt = T.points;
-  return { PAB: pt.pab, HPB: pt.hpb, FPB: pt.fpb, ZPB: pt.zpb }[type] ?? 0;
+  return { PAB: pt.pab, HPB: pt.hpb, FPB: pt.fpb, ZPB: pt.zpb, RRB: 0 }[type] ?? 0;
 }
 
 function bindRound(r) {
@@ -350,7 +456,7 @@ function bindRound(r) {
   const rd = t.roundsData[r - 1];
   view.querySelectorAll('[data-res]').forEach((b) => b.addEventListener('click', () => {
     const g = rd.pairs[Number(b.dataset.b)];
-    if (r < t.roundsData.length && !confirm('Měníte výsledek kola, po kterém už bylo vylosováno další kolo. Losování dalšího kola zůstane beze změny. Pokračovat?')) return;
+    if (!isRoundRobin(t) && r < t.roundsData.length && !confirm('Měníte výsledek kola, po kterém už bylo vylosováno další kolo. Losování dalšího kola zůstane beze změny. Pokračovat?')) return;
     g.result = g.result === b.dataset.res ? null : b.dataset.res;
     save();
     renderRounds();
@@ -361,6 +467,13 @@ function bindRound(r) {
   }));
   $('#printPairs')?.addEventListener('click', () => printPairings(r));
   $('#toNext')?.addEventListener('click', () => go({ round: r + 1 }));
+  $('#unschedule')?.addEventListener('click', () => {
+    if (!confirm('Zrušit rozpis všech kol? Startovní čísla zůstanou.')) return;
+    t.roundsData = [];
+    t.tpnFrozen = false;
+    save();
+    go({ round: null });
+  });
   $('#unpair')?.addEventListener('click', () => {
     const has = rd.pairs.some((g) => g.result);
     if (!confirm(has ? `Zrušit losování ${r}. kola včetně zadaných výsledků?` : `Zrušit losování ${r}. kola?`)) return;
@@ -490,10 +603,12 @@ function renderStandings() {
       ${codes.map((c) => `<th class="num" title="${esc(TIEBREAKS[c].label)} – ${esc(TIEBREAKS[c].help)}">${esc(TIEBREAKS[c].short)}</th>`).join('')}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr class="${r.player.status === 'withdrawn' ? 'withdrawn' : ''}"><td class="num">${rankLabel(rows, i)}</td><td class="num">${r.player.tpn}</td><td class="name">${esc(r.player.name)}</td>
         <td class="num">${r.player.rating || ''}</td><td class="num"><strong>${fmtPts(r.score)}</strong></td>
-        ${codes.map((c) => `<td class="num">${c === 'DE' ? (r.deUsed ? '✓' : '') : esc(fmtTb(c, r.tb[c]))}</td>`).join('')}</tr>`).join('')}
+        ${codes.map((c) => `<td class="num">${c === 'DE' || c === 'TOP' ? (r.used.includes(c) ? '✓' : '') : esc(fmtTb(c, r.tb[c]))}</td>`).join('')}</tr>`).join('')}
     </tbody></table></div>
     <p class="muted small">Pomocná hodnocení v tomto pořadí: ${codes.map((c) => esc(TIEBREAKS[c].label)).join(' → ')}${codes.length ? ' → ' : ''}los.
-      Neodehraná kola podle FIDE C.07 čl. 16. ${rows.some((r) => r.tied) ? 'Stejné umístění znamená, že shodu nerozhodlo žádné hodnocení.' : ''}</p>
+      ${isRoundRobin(t) ? 'Kontumace se počítají jako partie (FIDE C.07 čl. 15.2).' : 'Neodehraná kola podle FIDE C.07 čl. 16.'}
+      ${codes.some((c) => c === 'DE' || c === 'TOP') ? '✓ = shodu rozhodlo toto hodnocení.' : ''}
+      ${rows.some((r) => r.tied) ? 'Stejné umístění znamená, že shodu nerozhodlo žádné hodnocení.' : ''}</p>
     <div class="row"><button id="printSt">🖨 Tisk pořadí</button></div>`}
   </section>`;
   $('#after')?.addEventListener('change', (e) => go({ after: Number(e.target.value) }));
@@ -516,7 +631,50 @@ function crossCell(t, pid, r) {
   return { PAB: 'volno', HPB: '½ vol.', FPB: '1 vol.', ZPB: '–', absent: '–' }[rec.kind] || '';
 }
 
+function rrCrossCell(t, pid, oid) {
+  const out = [];
+  for (let r = 1; r <= t.roundsData.length; r++) {
+    const rec = roundRecord(t, pid, r);
+    if (!rec || rec.opp !== oid) continue;
+    if (rec.pending) out.push('·');
+    else if (rec.kind === 'forfeitWin') out.push('+');
+    else if (rec.kind === 'forfeitLoss') out.push('−');
+    else out.push(rec.points === t.points.win ? '1' : rec.points === t.points.draw ? '½' : '0');
+  }
+  return out.join(' ');
+}
+
+function renderRRCross() {
+  const t = T;
+  const R = t.roundsData.length;
+  const rows = R ? standingsRows(R) : [];
+  const rank = new Map(rows.map((r) => [r.player.id, r]));
+  const ps = [...t.players].sort((a, b) => a.tpn - b.tpn);
+  const codes = t.tiebreaks.filter((c) => TIEBREAKS[c] && c !== 'DE' && c !== 'TOP');
+  view.innerHTML = `<section class="card">
+    <h2>Tabulka</h2>
+    <p class="muted small">Výsledek hráče v řádku proti hráči ve sloupci${t.cycles === 2 ? ' (oba cykly)' : ''}. Řazeno podle startovních čísel.</p>
+    <div class="table-wrap"><table class="t cross"><thead><tr><th class="num">SČ</th><th class="name">Jméno</th>
+      ${ps.map((p) => `<th>${p.tpn}</th>`).join('')}<th>Body</th>${codes.map((c) => `<th title="${esc(TIEBREAKS[c].label)}">${esc(TIEBREAKS[c].short)}</th>`).join('')}<th>Poř.</th></tr></thead><tbody>
+      ${ps.map((p) => {
+    const r = rank.get(p.id);
+    return `<tr><td class="num">${p.tpn}</td><td class="name">${esc(p.name)}</td>
+        ${ps.map((o) => (o.id === p.id ? '<td aria-label="sám se sebou">■</td>' : `<td class="nowrap">${esc(rrCrossCell(t, p.id, o.id))}</td>`)).join('')}
+        <td><strong>${r ? fmtPts(r.score) : ''}</strong></td>${codes.map((c) => `<td>${r ? esc(fmtTb(c, r.tb[c])) : ''}</td>`).join('')}<td>${r ? `${r.rank}.` : ''}</td></tr>`;
+  }).join('')}
+    </tbody></table></div>
+    <div class="row" style="margin-top:.6rem"><button id="printCross">🖨 Tisk tabulky</button></div>
+  </section>`;
+  $('#printCross').addEventListener('click', () => {
+    printHtml(`<h2>Tabulka</h2>${view.querySelector('table').outerHTML}`);
+  });
+}
+
 function renderCross() {
+  if (isRoundRobin(T)) {
+    renderRRCross();
+    return;
+  }
   const t = T;
   const R = t.roundsData.length;
   const rows = R ? standingsRows(R) : t.players.map((player) => ({ player, score: 0, rank: player.tpn }));
@@ -541,7 +699,9 @@ function renderSettings() {
   const t = T;
   const R = t.roundsData.length;
   const codes = t.tiebreaks;
-  const avail = Object.keys(TIEBREAKS).filter((c) => !codes.includes(c));
+  const avail = tiebreaksFor(t.system).filter((c) => !codes.includes(c));
+  const rrMode = isRoundRobin(t);
+  const invalid = codes.filter((c) => !tiebreaksFor(t.system).includes(c));
   view.innerHTML = `
     <section class="card">
       <h2>Turnaj</h2>
@@ -555,19 +715,24 @@ function renderSettings() {
         <label class="f">Zástupce hlavního rozhodčího<input name="deputy" value="${esc(t.deputy)}"></label>
         <label class="f">Pořadatel<input name="organizer" value="${esc(t.organizer)}"></label>
         <label class="f">Tempo hry<input name="timeControl" value="${esc(t.timeControl)}" placeholder="90 min/40 tahů + 30 min + 30 s/tah"></label>
-        <label class="f">Počet kol<input type="number" name="rounds" min="${Math.max(1, R)}" max="30" value="${t.rounds}"></label>
+        <label class="f">Systém<select name="system"${R ? ' disabled' : ''}>${Object.entries(SYSTEMS).map(([k, v]) => `<option value="${k}"${systemKey(t) === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        ${rrMode
+    ? `<label class="f">Počet kol<input value="${roundRobinRounds(t.players.length, t.cycles) || '–'} (podle počtu hráčů)" disabled></label>`
+    : `<label class="f">Počet kol<input type="number" name="rounds" min="${Math.max(1, R)}" max="30" value="${t.rounds}"></label>
         <label class="f">Body za volno z losování (PAB)<select name="pab"${R ? ' disabled' : ''}>
           ${[1, 0.5, 0].map((x) => `<option value="${x}"${t.points.pab === x ? ' selected' : ''}>${fmtPts(x)}</option>`).join('')}</select></label>
         <label class="f">Body za půlbodové volno na žádost<select name="hpb">
-          ${[0.5, 0, 1].map((x) => `<option value="${x}"${t.points.hpb === x ? ' selected' : ''}>${fmtPts(x)}</option>`).join('')}</select></label>
+          ${[0.5, 0, 1].map((x) => `<option value="${x}"${t.points.hpb === x ? ' selected' : ''}>${fmtPts(x)}</option>`).join('')}</select></label>`}
         <div class="row" style="grid-column:1/-1"><button class="primary">Uložit</button></div>
       </form>
     </section>
     <section class="card">
       <h2>Pomocná hodnocení</h2>
-      <p class="muted small">Pořadí, ve kterém rozhodují shodu bodů. Výchozí je Soutěžní řád ŠSČR čl. 5.2.3:
-        vzájemné partie, Buchholz bez nejhoršího, Buchholz, Sonneborn-Berger, více partií černými, los.
+      <p class="muted small">Pořadí, ve kterém rozhodují shodu bodů. ${rrMode
+    ? 'Výchozí je Soutěžní řád ŠSČR čl. 5.2.2 (každý s každým): Sonneborn-Berger, vzájemné partie, výsledek proti vítězi, dále proti druhému, třetímu atd., los.'
+    : 'Výchozí je Soutěžní řád ŠSČR čl. 5.2.3 (švýcarský systém): vzájemné partie, Buchholz bez nejhoršího, Buchholz, Sonneborn-Berger, více partií černými, los.'}
         Výpočet podle FIDE C.07 (od 1. 3. 2026).</p>
+      ${invalid.length ? `<div class="notice warn">${invalid.map((c) => esc(TIEBREAKS[c]?.label || c)).join(', ')}: pro tento systém se podle FIDE nepoužívá.</div>` : ''}
       <ol class="tb-list">${codes.map((c, i) => `<li><span class="lbl">${i + 1}. ${esc(TIEBREAKS[c]?.label || c)} <span class="muted small">${esc(TIEBREAKS[c]?.help || '')}</span></span>
         <button class="small" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Výš">↑</button>
         <button class="small" data-down="${i}" ${i === codes.length - 1 ? 'disabled' : ''} aria-label="Níž">↓</button>
@@ -587,9 +752,12 @@ function renderSettings() {
     const fd = new FormData(e.target);
     for (const k of ['name', 'city', 'dateFrom', 'dateTo', 'arbiter', 'deputy', 'organizer', 'timeControl']) t[k] = fd.get(k).trim();
     t.fed = fd.get('fed').trim().toUpperCase();
-    t.rounds = Math.max(R, Math.min(30, Number(fd.get('rounds')) || t.rounds));
-    if (!R) t.points.pab = Number(fd.get('pab'));
-    t.points.hpb = Number(fd.get('hpb'));
+    if (!R && fd.get('system')) applySystem(t, fd.get('system'));
+    if (!isRoundRobin(t)) {
+      t.rounds = Math.max(R, Math.min(30, Number(fd.get('rounds')) || t.rounds));
+      if (!R && fd.get('pab') !== null) t.points.pab = Number(fd.get('pab'));
+      if (fd.get('hpb') !== null) t.points.hpb = Number(fd.get('hpb'));
+    }
     save();
     toast('Uloženo');
     render();
@@ -614,7 +782,7 @@ function renderSettings() {
     renderSettings();
   });
   $('#tbPreset').addEventListener('click', () => {
-    t.tiebreaks = [...TIEBREAKS_SR_SWISS];
+    t.tiebreaks = [...(isRoundRobin(t) ? TIEBREAKS_SR_RR : TIEBREAKS_SR_SWISS)];
     save();
     renderSettings();
   });
@@ -687,7 +855,7 @@ function printPairings(r) {
     <td class="num">${fmtPts(scoreAfter(t, g.black, r - 1))}</td><td>${esc(nameOf(g.black))}</td><td class="num">${playerById(t, g.black)?.tpn}</td></tr>`).join('');
   const byes = rd.byes.map((b) => `<tr><td></td><td class="num">${playerById(t, b.player)?.tpn}</td><td>${esc(nameOf(b.player))}</td><td></td>
     <td colspan="4">${BYE_LABEL[b.type]} (${fmtPts(byePoints(b.type))} b.)</td></tr>`).join('');
-  printHtml(`<h2>${r}. kolo – losování</h2><table><thead><tr><th class="num">Š.</th><th class="num">SČ</th><th>Bílý</th><th class="num">B.</th>
+  printHtml(`<h2>${r}. kolo${isRoundRobin(t) ? '' : ' – losování'}</h2><table><thead><tr><th class="num">Š.</th><th class="num">SČ</th><th>Bílý</th><th class="num">B.</th>
     <th style="text-align:center">Výsledek</th><th class="num">B.</th><th>Černý</th><th class="num">SČ</th></tr></thead><tbody>${rows}${byes}</tbody></table>`);
 }
 
@@ -695,7 +863,7 @@ function printStandings(upTo, rows, codes) {
   const head = codes.map((c) => `<th class="num">${esc(TIEBREAKS[c].short)}</th>`).join('');
   const body = rows.map((r, i) => `<tr><td class="num">${rankLabel(rows, i)}</td><td class="num">${r.player.tpn}</td><td>${esc(r.player.title)} ${esc(r.player.name)}</td>
     <td>${esc(r.player.club || r.player.fed)}</td><td class="num">${r.player.rating || ''}</td><td class="num">${fmtPts(r.score)}</td>
-    ${codes.map((c) => `<td class="num">${c === 'DE' ? (r.deUsed ? '✓' : '') : esc(fmtTb(c, r.tb[c]))}</td>`).join('')}</tr>`).join('');
+    ${codes.map((c) => `<td class="num">${c === 'DE' || c === 'TOP' ? (r.used.includes(c) ? '✓' : '') : esc(fmtTb(c, r.tb[c]))}</td>`).join('')}</tr>`).join('');
   const legend = codes.map((c) => `${esc(TIEBREAKS[c].short)} = ${esc(TIEBREAKS[c].label)}`).join(', ');
   printHtml(`<h2>Pořadí po ${upTo}. kole</h2><table><thead><tr><th class="num">Poř.</th><th class="num">SČ</th><th>Jméno</th><th>Oddíl</th><th class="num">Rtg</th><th class="num">Body</th>${head}</tr></thead>
     <tbody>${body}</tbody></table><div class="foot">${legend}</div>`);

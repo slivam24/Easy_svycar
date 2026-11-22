@@ -1,7 +1,10 @@
 // Pomocná hodnocení podle FIDE C.07 Play-Off and Tie-Break Regulations (platné od 1. 3. 2026),
 // včetně čl. 16 (neodehraná kola ve švýcarském systému) a výjimky pro Cut-1 (čl. 16.5).
+// Turnaj každý s každým (předem daný rozpis): kontumace se počítají jako partie, kromě hodnocení
+// podle ratingu a kontumačních proher u hodnocení typu B (čl. 15.2). Buchholz se v něm nepoužívá
+// (čl. 8). Navíc kritérium Soutěžního řádu ŠSČR čl. 5.2.2 c): výsledky proti prvnímu, druhému atd.
 
-import { roundRecord } from './model.js';
+import { roundRecord, isRoundRobin } from './model.js';
 
 export const TIEBREAKS = {
   DE: { label: 'Vzájemné partie', short: 'Vz', help: 'Direct Encounter (čl. 6)' },
@@ -25,7 +28,17 @@ export const TIEBREAKS = {
   TPR: { label: 'Turnajový výkon', short: 'Rp', help: 'Tournament Performance Rating (čl. 10.2)' },
   RTNG: { label: 'Rating', short: 'Rtg', help: 'Rating (čl. 10.6)' },
   TPN: { label: 'Startovní číslo', short: 'SČ', help: 'Tournament Pairing Number (čl. 7.8)' },
+  KS: { label: 'Koya', short: 'KS', help: 'Koya System – body proti hráčům s aspoň 50 % (čl. 9.2)' },
+  TOP: { label: 'Výsledky proti prvnímu, druhému…', short: '1., 2.…', help: 'Soutěžní řád ŠSČR čl. 5.2.2 c)' },
 };
+
+const SWISS_ONLY = ['BH', 'BH-C1', 'BH-C2', 'BH-M1', 'BH-M2', 'AOB'];
+const RR_ONLY = ['KS'];
+
+/** Pomocná hodnocení, která dávají smysl pro daný systém. */
+export function tiebreaksFor(system) {
+  return Object.keys(TIEBREAKS).filter((c) => (system === 'rr' ? !SWISS_ONLY.includes(c) : !RR_ONLY.includes(c)));
+}
 
 // převod procentuálního zisku na rozdíl ratingu (FIDE Rating Regulations, tabulka 8.1.1)
 const DP = [
@@ -64,7 +77,13 @@ export function tiebreakData(t, R) {
   // čl. 16.1–16.2: kategorie neodehraných kol
   const isRequested = (rec) => rec.kind === 'HPB' || rec.kind === 'ZPB' || rec.kind === 'absent';
   const isVur = (rec) => isRequested(rec) || rec.kind === 'forfeitLoss';
+  const rr = isRoundRobin(t);
   const played = (rec) => rec.kind === 'game' && !rec.pending;
+  const isForfeit = (rec) => rec.kind === 'forfeitWin' || rec.kind === 'forfeitLoss';
+  // partie pro vzájemné partie a SB: v turnaji každý s každým i kontumace (čl. 15.2)
+  const encounter = (rec) => played(rec) || (rr && isForfeit(rec) && !!rec.opp);
+  // partie pro hodnocení typu B: v turnaji každý s každým i kontumační výhry (čl. 15.2)
+  const typeB = (rec) => played(rec) || (rr && rec.kind === 'forfeitWin' && !!rec.opp);
   const adjusted = new Map();
   const cat5 = new Map();
   for (const id of ids) {
@@ -88,6 +107,13 @@ export function tiebreakData(t, R) {
   const contributions = new Map();
   for (const id of ids) {
     const own = score.get(id);
+    if (rr) {
+      contributions.set(id, recs.get(id).filter(encounter).map((rec) => {
+        const os = score.get(rec.opp) ?? 0;
+        return { opp: os, sb: os * rec.points, vur: false, otb: played(rec), rec };
+      }));
+      continue;
+    }
     const list = recs.get(id).map((rec) => {
       if (rec.pending) return null;
       if (played(rec)) {
@@ -102,7 +128,8 @@ export function tiebreakData(t, R) {
     }).filter(Boolean);
     contributions.set(id, list);
   }
-  return { recs, score, adjusted, contributions, played };
+  const maxScore = rr ? (t.players.length - 1) * (t.cycles || 1) * pt.win : t.rounds * pt.win;
+  return { recs, score, adjusted, contributions, played, encounter, typeB, maxScore, rr };
 }
 
 // Odebrání nejméně významných hodnot s výjimkou čl. 16.5 (Cut-1 u hráče s VUR).
@@ -145,7 +172,7 @@ function cutSB(list, cuts) {
 
 /** Hodnota jednoho pomocného hodnocení (bez vzájemných partií). */
 export function tiebreakValue(code, id, data, t) {
-  const { recs, score, contributions, played } = data;
+  const { recs, score, contributions, played, typeB, encounter } = data;
   const list = contributions.get(id);
   const arr = recs.get(id).filter((r) => !r.pending);
   const pt = t.points;
@@ -172,13 +199,15 @@ export function tiebreakValue(code, id, data, t) {
       return Math.round((bh.reduce((a, b) => a + b, 0) / opps.length) * 100) / 100;
     }
     case 'BPG':
-      return arr.filter((r) => played(r) && r.colour === 'B').length;
+      return arr.filter((r) => typeB(r) && r.colour === 'B').length;
     case 'BWG':
-      return arr.filter((r) => played(r) && r.colour === 'B' && r.points === pt.win).length;
+      return arr.filter((r) => typeB(r) && r.colour === 'B' && r.points === pt.win).length;
     case 'WIN':
       return arr.filter((r) => r.points === pt.win && r.kind !== 'forfeitLoss').length;
     case 'WON':
-      return arr.filter((r) => played(r) && r.points === pt.win).length;
+      return arr.filter((r) => typeB(r) && r.points === pt.win).length;
+    case 'KS':
+      return arr.filter((r) => encounter(r) && score.get(r.opp) * 2 >= data.maxScore).reduce((s, r) => s + r.points, 0);
     case 'PS': {
       let s = 0;
       let total = 0;
@@ -231,9 +260,9 @@ export function tiebreakValue(code, id, data, t) {
  */
 export function directEncounter(group, data, t) {
   const win = t.points.win;
-  const { recs, played } = data;
+  const { recs, encounter } = data;
   const meet = (a, b) => {
-    const games = recs.get(a).filter((r) => played(r) && r.opp === b);
+    const games = recs.get(a).filter((r) => encounter(r) && r.opp === b);
     if (!games.length) return null;
     return games.reduce((s, r) => s + r.points, 0) / games.length;
   };
@@ -283,6 +312,34 @@ export function directEncounter(group, data, t) {
 }
 
 /**
+ * Soutěžní řád ŠSČR čl. 5.2.2 c): výsledek proti vítězi soutěže, dále proti druhému, třetímu atd.
+ * Postupně se porovnají body proti hráčům na 1., 2., … místě (podle dosavadního pořadí; skupina
+ * hráčů, mezi kterými ještě rozhodnuto není, se bere jako jedno místo).
+ */
+export function resultsAgainstOrder(group, order, data) {
+  const { recs, encounter } = data;
+  const others = order.filter((g) => g !== group);
+  const vec = new Map(group.map((id) => [id, others.map((og) => {
+    const set = new Set(og);
+    return recs.get(id).filter((r) => encounter(r) && set.has(r.opp)).reduce((s, r) => s + r.points, 0);
+  })]));
+  const cmp = (a, b) => {
+    const x = vec.get(a);
+    const y = vec.get(b);
+    for (let i = 0; i < x.length; i++) if (Math.abs(x[i] - y[i]) > 1e-9) return y[i] - x[i];
+    return 0;
+  };
+  const sorted = [...group].sort(cmp);
+  const parts = [];
+  for (const id of sorted) {
+    const last = parts[parts.length - 1];
+    if (last && cmp(last[0], id) === 0) last.push(id);
+    else parts.push([id]);
+  }
+  return parts;
+}
+
+/**
  * Pořadí po kole R.
  * @returns {Array<{ player, rank, score, tb: Record<string, number>, tied: boolean }>}
  */
@@ -290,7 +347,7 @@ export function computeStandings(t, R = t.roundsData.length, codes = t.tiebreaks
   const data = tiebreakData(t, R);
   const rows = t.players.map((p) => {
     const tb = {};
-    for (const c of codes) if (c !== 'DE') tb[c] = tiebreakValue(c, p.id, data, t);
+    for (const c of codes) if (c !== 'DE' && c !== 'TOP') tb[c] = tiebreakValue(c, p.id, data, t);
     return { player: p, score: data.score.get(p.id), tb };
   });
   const byId = new Map(rows.map((r) => [r.player.id, r]));
@@ -301,7 +358,8 @@ export function computeStandings(t, R = t.roundsData.length, codes = t.tiebreaks
     if (g && byId.get(g[0]).score === r.score) g.push(r.player.id);
     else groups.push([r.player.id]);
   }
-  const deFlags = new Map();
+  const used = new Map(); // hráč → kódy hodnocení, které u něj rozhodly (vzájemné partie, výsledky proti pořadí)
+  const mark = (g, code) => g.forEach((id) => used.set(id, [...(used.get(id) || []), code]));
   for (const code of codes) {
     const next = [];
     for (const g of groups) {
@@ -311,7 +369,13 @@ export function computeStandings(t, R = t.roundsData.length, codes = t.tiebreaks
       }
       if (code === 'DE') {
         const parts = directEncounter(g, data, t);
-        if (parts.length > 1) for (const id of g) deFlags.set(id, true);
+        if (parts.length > 1) mark(g, 'DE');
+        next.push(...parts);
+        continue;
+      }
+      if (code === 'TOP') {
+        const parts = resultsAgainstOrder(g, groups, data);
+        if (parts.length > 1) mark(g, 'TOP');
         next.push(...parts);
         continue;
       }
@@ -335,7 +399,8 @@ export function computeStandings(t, R = t.roundsData.length, codes = t.tiebreaks
     const members = [...g].sort((a, b) => byId.get(a).player.tpn - byId.get(b).player.tpn);
     for (const id of members) {
       const row = byId.get(id);
-      out.push({ ...row, rank: place, tied: g.length > 1, deUsed: !!deFlags.get(id) });
+      const u = used.get(id) || [];
+      out.push({ ...row, rank: place, tied: g.length > 1, used: u, deUsed: u.includes('DE') });
     }
     place += g.length;
   }
