@@ -47,6 +47,23 @@ v zařízení.
 - **Pořadí** po libovolném kole, křížová **tabulka**, **tisk** losování, pořadí a tabulky.
 - **Export TRF** (zpráva pro FIDE, kontrola losování jiným programem), **záloha** a **načtení**
   turnaje ze zálohy nebo z TRF.
+- **Synchronizace mezi zařízeními** (část Sdílení): turnaj může být otevřený na počítači
+  i na telefonech rozhodčích, změny se objeví během pár sekund. Další zařízení se připojí
+  QR kódem nebo odkazem.
+
+## Synchronizace
+
+- Zařízení si posílají změny přes server [ntfy](https://ntfy.sh), který zprávy jen přeposílá
+  (lze nastavit i vlastní server ntfy). Obsah je zašifrovaný AES-256-GCM; klíč je jen v odkazu
+  pro připojení za znakem `#`, který prohlížeč na žádný server neposílá.
+- Slučují se jednotlivé údaje (např. výsledek jedné partie) podle času změny, takže výsledky
+  zadané souběžně na různých zařízeních se nepřepíšou. Nově vylosované kolo nahradí celé staré.
+- Bez internetu se změny ukládají a odešlou se, jakmile je spojení. Server drží zprávy 12 hodin;
+  po delší přestávce si zařízení vyžádá celý stav od ostatních.
+- Synchronizace běží, dokud je turnaj na zařízení otevřený.
+- Veřejný server ntfy.sh přijme z jedné sítě (IP adresy) asi 250 zpráv denně; změny se proto
+  posílají v dávkách. Na velkých akcích, kde je hodně zařízení v jedné síti, je lepší vlastní server.
+- Kdo má odkaz, může turnaj vidět i upravovat.
 
 ## Jak losování funguje
 
@@ -71,6 +88,8 @@ se vylosuje za zlomek sekundy. Postup losování po skupinách jde zobrazit u ka
 - Rozpis každý s každým odpovídá všem Bergerovým tabulkám FIDE pro 3–16 hráčů.
 - Testovací případy programu bbpPairings (`tests/fixtures/bbp`, licence Apache 2.0) včetně
   15. kola turnaje se 60 hráči a kontumacemi.
+- Synchronizace: testy slučování (souběžné změny, opožděné a zdvojené zprávy, nové losování),
+  šifrování a skládání zpráv; v prohlížeči zkouška počítače a telefonu přes server ntfy.
 - Párovací algoritmy jsou porovnané s hrubou silou na stovkách náhodných grafů, export a import
   TRF se zkoušejí tam a zpět.
 
@@ -94,6 +113,8 @@ Nasazení: GitHub Pages z větve `main`, kořenová složka.
 | `js/roundrobin.js` | rozpis každý s každým (Bergerovy tabulky FIDE) |
 | `js/team.js` | soutěže družstev: utkání, rozpis, losování, pořadí |
 | `js/teamui.js` | rozhraní soutěží družstev |
+| `js/sync.js` | synchronizace: rozdíly, slučování, šifrování, přenos přes ntfy |
+| `js/syncui.js` | synchronizace v aplikaci, připojení dalšího zařízení |
 | `js/matching.js` | párování v obecném grafu: největší počet dvojic a největší váha (BigInt) |
 | `js/tiebreaks.js` | pomocná hodnocení FIDE C.07 |
 | `js/model.js` | datový model turnaje, body, startovní čísla, převod na vstup losování |
@@ -103,7 +124,6 @@ Nasazení: GitHub Pages z větve `main`, kořenová složka.
 
 ## Omezení
 
-- Data jsou jen v jednom zařízení; mezi zařízeními se přenášejí zálohou.
 - Zatím bez zrychleného losování (Baku), Varmových tabulek, ruční úpravy vylosovaných dvojic
   a kontroly sestav družstev podle SŘ (hosté, volní hráči, cizinci).
 - Hodnocení podle ratingu počítají jen se soupeři, kteří rating mají.

@@ -16,7 +16,7 @@
 
 import { pairDutch } from './dutch.js';
 import { roundRobinSchedule, roundRobinRounds } from './roundrobin.js';
-import { newTournament, initialOrder } from './model.js';
+import { newTournament, initialOrder, newRoundId } from './model.js';
 
 export const TEAM_TIEBREAKS = {
   GP: { label: 'Skóre (součet bodů z partií)', short: 'Skóre', help: 'Game Points (C.07 čl. 13.1), SŘ 5.3.3 b), 5.3.4 c)' },
@@ -274,7 +274,7 @@ export function generateTeamRoundRobin(t) {
   const byTpn = new Map(t.teams.map((x) => [x.tpn, x.id]));
   t.rounds = roundRobinRounds(n, t.cycles || 1);
   t.roundsData = roundRobinSchedule(n, t.cycles || 1).map((pairs) => {
-    const rd = { matches: [], byes: [] };
+    const rd = { rid: newRoundId(), matches: [], byes: [] };
     for (const [h, a] of pairs) {
       if (h > n) rd.byes.push({ team: byTpn.get(a), type: 'RRB' });
       else if (a > n) rd.byes.push({ team: byTpn.get(h), type: 'RRB' });
@@ -316,6 +316,7 @@ export function pairNextTeamRound(t, { random = Math.random } = {}) {
   if (!t.initialColour) t.initialColour = random() < 0.5 ? 'W' : 'B';
   const out = pairDutch(teamPairingInput(t, r));
   t.roundsData.push({
+    rid: newRoundId(),
     matches: out.pairs.map((g) => ({ home: g.white, away: g.black, boards: null })),
     byes: out.bye !== null ? [{ team: out.bye, type: 'PAB' }] : [],
     pairedAt: new Date().toISOString(),

@@ -27,6 +27,11 @@ export const TIEBREAKS_SR_RR = Object.freeze(['SB', 'DE', 'TOP']);
 
 export const isRoundRobin = (t) => t.system === 'rr';
 
+/** Jednoznačné označení vylosovaného kola (kvůli synchronizaci mezi zařízeními). */
+export function newRoundId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export const TITLES = ['GM', 'IM', 'WGM', 'FM', 'WIM', 'CM', 'WFM', 'WCM'];
 
 export const RESULTS = ['1-0', '½-½', '0-1', '+-', '-+', '--'];
@@ -218,7 +223,7 @@ export function generateRoundRobin(t) {
   const schedule = roundRobinSchedule(n, t.cycles || 1);
   t.rounds = roundRobinRounds(n, t.cycles || 1);
   t.roundsData = schedule.map((pairs) => {
-    const rd = { pairs: [], byes: [] };
+    const rd = { rid: newRoundId(), pairs: [], byes: [] };
     for (const [w, b] of pairs) {
       if (w > n) rd.byes.push({ player: byTpn.get(b), type: 'RRB' });
       else if (b > n) rd.byes.push({ player: byTpn.get(w), type: 'RRB' });
@@ -314,6 +319,7 @@ export function pairNextRound(t, { random = Math.random } = {}) {
     if (p && !(p.status === 'withdrawn' && p.withdrawnFrom <= r)) byes.push({ player: p.id, type });
   }
   t.roundsData.push({
+    rid: newRoundId(),
     pairs: out.pairs.map((g) => ({ white: g.white, black: g.black, result: null })),
     byes,
     pairedAt: new Date().toISOString(),

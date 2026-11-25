@@ -25,6 +25,8 @@ function applySystem(t, key) {
 import { tournamentToTRF, trfToTournament } from './trf.js';
 import { isTeam, newTeamTournament } from './team.js';
 import { initTeamUI, renderTeam, resetTeamUI, TEAM_TABS, TEAM_SYSTEMS, applyTeamSystem } from './teamui.js';
+import { initSync, attach as syncAttach, localChange as syncLocalChange, renderJoin, stopJoin, mountSyncCard, parseJoin } from './syncui.js';
+import { shareable } from './sync.js';
 import { listTournaments, loadTournament, saveTournament, deleteTournament } from './store.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -42,7 +44,7 @@ const TABS = [
   ['poradi', 'Pořadí'],
   ['tabulka', 'Tabulka'],
   ['turnaj', 'Nastavení'],
-  ['export', 'Export'],
+  ['export', 'Sdílení'],
 ];
 
 function toast(msg) {
@@ -55,6 +57,7 @@ function toast(msg) {
 
 function save() {
   if (!saveTournament(T)) toast('Turnaj se nepodařilo uložit (plné úložiště?)');
+  syncLocalChange();
 }
 
 function parseHash() {
@@ -76,9 +79,20 @@ function go(params) {
 }
 
 function render() {
+  const join = parseJoin(location.hash);
+  if (join) {
+    T = null;
+    syncAttach(null);
+    tabsEl.hidden = true;
+    $('#topTitle').textContent = '';
+    renderJoin(join);
+    return;
+  }
+  stopJoin();
   const { id, tab } = parseHash();
   if (!id) {
     T = null;
+    syncAttach(null);
     renderHome();
     return;
   }
@@ -87,6 +101,7 @@ function render() {
     location.hash = '';
     return;
   }
+  syncAttach(T);
   $('#topTitle').textContent = T.name || 'Turnaj';
   document.title = `${T.name || 'Turnaj'} – Švýcar`;
   if (isTeam(T)) {
@@ -806,6 +821,7 @@ function renderSettings() {
   });
   $('#delT').addEventListener('click', () => {
     if (!confirm(`Opravdu smazat turnaj „${t.name}“ z tohoto zařízení?`)) return;
+    syncAttach(null);
     deleteTournament(t.id);
     T = null;
     location.hash = '';
@@ -830,6 +846,7 @@ const fileBase = () => (T.name || 'turnaj').normalize('NFD').replace(/[̀-ͯ]/g,
 
 function renderExport() {
   view.innerHTML = `
+    <div id="syncCard"></div>
     <section class="card">
       <h2>Zpráva pro FIDE (TRF)</h2>
       <p class="muted small">Soubor TRF-16 se všemi hráči a výsledky. Hodí se pro zápočet na FIDE a pro kontrolu losování
@@ -838,7 +855,7 @@ function renderExport() {
     </section>
     <section class="card">
       <h2>Záloha</h2>
-      <p class="muted small">Celý turnaj v jednom souboru. Na jiném zařízení ho načtete na úvodní stránce.</p>
+      <p class="muted small">Celý turnaj v jednom souboru (bez klíče synchronizace). Na jiném zařízení ho načtete na úvodní stránce.</p>
       <button id="dlJson">Stáhnout zálohu (.json)</button>
     </section>
     <section class="card">
@@ -848,7 +865,8 @@ function renderExport() {
         losování ověřit nezávislým programem; soubor TRF k tomu stačí.</p>
     </section>`;
   $('#dlTrf').addEventListener('click', () => download(`${fileBase()}.trf`, tournamentToTRF(T), 'text/plain;charset=utf-8'));
-  $('#dlJson').addEventListener('click', () => download(`${fileBase()}.json`, JSON.stringify(T, null, 1), 'application/json'));
+  $('#dlJson').addEventListener('click', () => download(`${fileBase()}.json`, JSON.stringify(shareable(T), null, 1), 'application/json'));
+  mountSyncCard($('#syncCard'));
 }
 
 // ---------------------------------------------------------------- tisk
@@ -888,10 +906,13 @@ function printStandings(upTo, rows, codes) {
 }
 
 // ---------------------------------------------------------------- start
+initSync({ getT: () => T, render, toast, esc, view });
 initTeamUI({
   getT: () => T, save, go, toast, esc, $, view, parseHash, printHtml, secureRandom, download, fileBase, render,
+  mountSyncCard, shareable,
   deleteCurrent: () => {
     if (!confirm(`Opravdu smazat „${T.name}“ z tohoto zařízení?`)) return;
+    syncAttach(null);
     deleteTournament(T.id);
     T = null;
     location.hash = '';

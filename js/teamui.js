@@ -21,7 +21,7 @@ export const TEAM_TABS = [
   ['tabulka', 'Tabulka'],
   ['jednotlivci', 'Jednotlivci'],
   ['turnaj', 'Nastavení'],
-  ['export', 'Export'],
+  ['export', 'Sdílení'],
 ];
 
 export const TEAM_SYSTEMS = {
@@ -682,10 +682,12 @@ function renderTeamSettings() {
 
 function renderTeamExport() {
   C.view.innerHTML = `
+    <div id="syncCard"></div>
     <section class="card">
       <h2>Záloha</h2>
-      <p class="muted small">Celá soutěž v jednom souboru. Na jiném zařízení ji načtete na úvodní stránce.</p>
-      <button class="primary" id="dlJson">Stáhnout zálohu (.json)</button>
+      <p class="muted small">Celá soutěž v jednom souboru (bez klíče synchronizace). Na jiném zařízení ji načtete na úvodní stránce.</p>
+      <button id="dlJson">Stáhnout zálohu (.json)</button>
     </section>`;
-  C.$('#dlJson').addEventListener('click', () => C.download(`${C.fileBase()}.json`, JSON.stringify(T(), null, 1), 'application/json'));
+  C.$('#dlJson').addEventListener('click', () => C.download(`${C.fileBase()}.json`, JSON.stringify(C.shareable(T()), null, 1), 'application/json'));
+  C.mountSyncCard(C.$('#syncCard'));
 }
