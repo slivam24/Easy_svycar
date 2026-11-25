@@ -324,7 +324,11 @@ export class Channel {
     const parts = await encodeMessage(obj, this.key);
     for (const body of parts) {
       const res = await fetch(`${this.server}/${this.topic}`, { method: 'POST', body });
-      if (!res.ok) throw new Error(res.status === 429 ? 'Server synchronizace hlásí příliš mnoho zpráv.' : `Server synchronizace: ${res.status}`);
+      if (!res.ok) {
+        const err = new Error(res.status === 429 ? 'Server synchronizace hlásí příliš mnoho zpráv.' : `Server synchronizace: ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
     }
   }
 }

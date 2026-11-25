@@ -16,6 +16,7 @@ let firstQueued = 0;
 let status = 'off';
 let deferred = false;
 let joinChan = null;
+let blockedUntil = 0; // po odmítnutí serverem (limit zpráv) chvíli neposílat
 const helloTimers = new Map();
 
 export { parseJoin };
@@ -65,6 +66,7 @@ const LABELS = {
   sending: ['● Odesílám…', 'ok'],
   connecting: ['◌ Připojuji…', 'wait'],
   offline: ['○ Offline – změny počkají', 'bad'],
+  limited: ['○ Limit serveru – změny počkají', 'bad'],
   off: ['', ''],
 };
 
@@ -137,8 +139,8 @@ export function localChange() {
 function schedule() {
   if (!firstQueued) firstQueued = Date.now();
   clearTimeout(sendTimer);
-  // dávka: počkat 3 s na další změny, nejdéle 12 s (veřejný server má denní limit zpráv)
-  const wait = Date.now() - firstQueued > 12000 ? 0 : 3000;
+  // dávka: počkat 6 s na další změny, nejdéle 15 s (veřejný server má denní limit zpráv)
+  const wait = Date.now() - firstQueued > 15000 ? 0 : 6000;
   sendTimer = setTimeout(flush, wait);
   setStatus(status);
 }
@@ -146,7 +148,7 @@ function schedule() {
 let flushing = false;
 async function flush() {
   const t = cur();
-  if (flushing || !chan || !t?.sync?.enabled || !t.sync.outbox?.length) return;
+  if (flushing || !chan || !t?.sync?.enabled || !t.sync.outbox?.length || Date.now() < blockedUntil) return;
   flushing = true;
   firstQueued = 0;
   const n = t.sync.outbox.length;
@@ -157,8 +159,12 @@ async function flush() {
     t.sync.outbox.splice(0, n);
     saveTournament(t);
     setStatus('online');
-  } catch {
-    setStatus('offline');
+  } catch (err) {
+    if (err.status === 429) {
+      blockedUntil = Date.now() + 5 * 60 * 1000;
+      setStatus('limited');
+      C.toast('Server synchronizace hlásí limit zpráv. Změny se pošlou za pár minut.');
+    } else setStatus('offline');
   } finally {
     flushing = false;
   }
