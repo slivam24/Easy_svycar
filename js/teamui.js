@@ -86,6 +86,9 @@ function renderTeams() {
       ${!R && t.teams.length > 1 ? `<div class="row" style="margin-top:.6rem">
         ${t.system === 'rr' ? '<button id="drawTeams">🎲 Vylosovat čísla družstev</button>' : ''}
         ${t.tpnManual ? '<button id="strengthTeams">Čísla podle ratingu</button>' : ''}</div>` : ''}
+      ${t.teams.length ? `<div class="row" style="margin-top:.6rem">
+        <button id="printTeams">🖨 Tisk seznamu družstev</button>
+        <button id="printRosters">🖨 Tisk soupisek</button></div>` : ''}
     </section>
     ${!team ? `<section class="card">
       <h2>Přidat družstvo</h2>
@@ -113,6 +116,8 @@ function renderTeams() {
     editingTeam = x.id;
     renderTeams();
   });
+  C.$('#printTeams')?.addEventListener('click', () => printTeamList(t));
+  C.$('#printRosters')?.addEventListener('click', () => printRosters(t));
   C.$('#drawTeams')?.addEventListener('click', () => {
     drawTeamNumbers(t, C.secureRandom);
     C.save();
@@ -125,6 +130,21 @@ function renderTeams() {
     renderTeams();
   });
   if (team) bindTeamEditor(t, team, hasMatches(team.id));
+}
+
+function printTeamList(t) {
+  const rows = t.teams.map((x) => `<tr><td class="num">${x.tpn || ''}</td><td>${esc(x.name)}</td><td>${esc(x.club)}</td>
+    <td class="num">${x.roster.length}</td><td class="num">${Math.round(teamStrength(t, x)) || ''}</td></tr>`).join('');
+  C.printHtml(`<h2>Seznam družstev (${t.teams.length})</h2><table><thead><tr><th class="num">Č.</th><th>Družstvo</th><th>Oddíl</th>
+    <th class="num">Hráčů</th><th class="num">Průměr ${t.boards} šach.</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function printRosters(t) {
+  const html = t.teams.map((x) => `<h2>${x.tpn ? `${x.tpn}. ` : ''}${esc(x.name)}${x.club ? ` <span style="font-weight:normal">(${esc(x.club)})</span>` : ''}</h2>
+    <table><thead><tr><th class="num">Poř.</th><th>Jméno</th><th>Titul</th><th class="num">Rating</th><th>FIDE ID</th></tr></thead><tbody>
+    ${x.roster.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.title)}</td><td class="num">${p.rating || ''}</td><td>${esc(p.fideId)}</td></tr>`).join('')
+    || '<tr><td colspan="5">Soupiska je prázdná.</td></tr>'}</tbody></table>`).join('');
+  C.printHtml(`<h2>Soupisky družstev</h2>${html}`);
 }
 
 function teamEditor(t, team, played) {
