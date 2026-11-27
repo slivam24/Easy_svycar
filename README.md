@@ -51,6 +51,9 @@ v zařízení.
   i na telefonech rozhodčích, změny se objeví během pár sekund. Další zařízení se připojí
   QR kódem nebo odkazem.
 
+- **Nápověda** (otazník vpravo nahoře): návod k použití a seznam změn. Po aktualizaci aplikace
+  se na úvodní stránce ukáže, co je nového.
+
 ## Synchronizace
 
 - Zařízení si posílají změny přes server [ntfy](https://ntfy.sh), který zprávy jen přeposílá
@@ -107,6 +110,10 @@ npm test        # testy (Node.js 20+), bez dalších závislostí
 
 Nasazení: GitHub Pages z větve `main`, kořenová složka.
 
+Při každé změně, kterou uživatel pozná, přidejte záznam na začátek `CHANGELOG` v `js/about.js`,
+zvyšte verzi v `package.json` (test hlídá, že se shodují) a u nových nebo přejmenovaných souborů
+i název mezipaměti `CACHE` v `sw.js`. Když se změní ovládání, upravte i návod ve stejném souboru.
+
 | Soubor | Obsah |
 | --- | --- |
 | `js/dutch.js` | losování (holandský systém FIDE 2026) |
@@ -121,6 +128,7 @@ Nasazení: GitHub Pages z větve `main`, kořenová složka.
 | `js/trf.js` | formát TRF-16 |
 | `js/store.js` | uložení turnajů v zařízení |
 | `js/app.js` | uživatelské rozhraní |
+| `js/about.js` | nápověda: návod k použití, seznam změn a číslo verze |
 
 ## Omezení
 

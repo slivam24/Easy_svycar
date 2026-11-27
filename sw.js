@@ -1,6 +1,6 @@
 // Service worker: aplikace funguje i bez internetu. Soubory se berou z mezipaměti
 // a na pozadí se obnovují ze sítě.
-const CACHE = 'svycar-v6';
+const CACHE = 'svycar-v7';
 const SHELL = [
   './',
   'index.html',
@@ -8,6 +8,7 @@ const SHELL = [
   'icons/icon.svg',
   'css/style.css',
   'js/app.js',
+  'js/about.js',
   'js/model.js',
   'js/dutch.js',
   'js/matching.js',
