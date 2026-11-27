@@ -28,6 +28,7 @@ import { initTeamUI, renderTeam, resetTeamUI, TEAM_TABS, TEAM_SYSTEMS, applyTeam
 import { initSync, attach as syncAttach, localChange as syncLocalChange, renderJoin, stopJoin, mountSyncCard, parseJoin } from './syncui.js';
 import { shareable } from './sync.js';
 import { listTournaments, loadTournament, saveTournament, deleteTournament } from './store.js';
+import { aboutView, whatsNewNotice, markSeen, VERSION } from './about.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -89,6 +90,13 @@ function render() {
     return;
   }
   stopJoin();
+  const help = new URLSearchParams(location.hash.slice(1));
+  if (help.has('napoveda')) {
+    T = null;
+    syncAttach(null);
+    renderAbout(help.get('napoveda'));
+    return;
+  }
   const { id, tab } = parseHash();
   if (!id) {
     T = null;
@@ -118,6 +126,15 @@ function render() {
   fn();
 }
 
+// ---------------------------------------------------------------- nápověda
+function renderAbout(part) {
+  $('#topTitle').textContent = 'Nápověda';
+  document.title = 'Nápověda – Švýcar';
+  tabsEl.hidden = true;
+  view.innerHTML = aboutView(part, esc);
+  if (part === 'zmeny') markSeen();
+}
+
 // ---------------------------------------------------------------- domů
 function renderHome() {
   $('#topTitle').textContent = '';
@@ -125,11 +142,12 @@ function renderHome() {
   tabsEl.hidden = true;
   const list = listTournaments();
   view.innerHTML = `
+    ${whatsNewNotice(esc)}
     <section class="card">
       <h2>Šachové turnaje jednotlivců a soutěže družstev</h2>
       <p class="muted">Švýcarský systém s losováním podle holandského systému FIDE (platí od 1. 2. 2026) nebo každý s každým
         podle Schurigových (Bergerových) tabulek, pro jednotlivce i družstva. Pomocná hodnocení FIDE (od 1. 3. 2026) s výchozím pořadím podle Soutěžního řádu ŠSČR.
-        Výsledky jde zadávat z mobilu. Data zůstávají v tomto zařízení.</p>
+        Výsledky jde zadávat z mobilu. Data zůstávají v tomto zařízení. Poprvé tady? Přečtěte si <a href="#napoveda">návod</a>.</p>
       <form id="newForm" class="row">
         <input name="name" placeholder="Název nového turnaje" required style="flex:1;min-width:12rem" aria-label="Název nového turnaje">
         <select name="system" style="width:auto" aria-label="Systém turnaje">
@@ -149,7 +167,12 @@ function renderHome() {
       <h2>Načíst turnaj</h2>
       <p class="muted small">Záloha z této aplikace (.json) nebo soubor TRF (z jiného programu nebo ze zprávy pro FIDE).</p>
       <input type="file" id="importFile" accept=".json,.trf,.txt,application/json,text/plain">
-    </section>`;
+    </section>
+    <p class="muted small center">Verze ${esc(VERSION)} · <a href="#napoveda">Návod</a> · <a href="#napoveda=zmeny">Seznam změn</a></p>`;
+  $('#whatsNewClose')?.addEventListener('click', () => {
+    markSeen();
+    $('#whatsNew').remove();
+  });
   $('#newForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -777,7 +800,7 @@ function renderSettings() {
     </section>
     <section class="card">
       <h2>Smazat turnaj</h2>
-      <p class="muted small">Smaže turnaj z tohoto zařízení. Předtím si můžete stáhnout zálohu v části Export.</p>
+      <p class="muted small">Smaže turnaj z tohoto zařízení. Předtím si můžete stáhnout zálohu v části Sdílení.</p>
       <button class="danger" id="delT">Smazat turnaj</button>
     </section>`;
   $('#setForm').addEventListener('submit', (e) => {

@@ -1,6 +1,6 @@
 {
   "name": "easy-svycar",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Šachové turnaje jednotlivců švýcarským systémem: losování podle holandského systému FIDE 2026",
